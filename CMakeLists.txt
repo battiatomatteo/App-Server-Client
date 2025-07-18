@@ -6,13 +6,18 @@ project(Progetto_s_o)
 #Trova OpenSSL
 find_package(OpenSSL REQUIRED)
 
+include_directories(
+        ${PROJECT_SOURCE_DIR}/Server
+        ${OPENSSL_INCLUDE_DIR}
+)
+
 #Crea l'eseguibile
 add_executable(client 
-        client.c
+        Client/client.c
 )
 add_executable(server 
-        server.c
-        #server/sha256_utils.c
+        Server/server.c
+        Server/sha256_utils.c
 )
 
 #Collega OpenSSL

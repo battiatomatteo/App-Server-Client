@@ -142,53 +142,77 @@ server/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/build
 .PHONY : server/fast
 
-client.o: client.c.o
-.PHONY : client.o
+Client/client.o: Client/client.c.o
+.PHONY : Client/client.o
 
 # target to build an object file
-client.c.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/client.dir/build.make CMakeFiles/client.dir/client.c.o
-.PHONY : client.c.o
+Client/client.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/client.dir/build.make CMakeFiles/client.dir/Client/client.c.o
+.PHONY : Client/client.c.o
 
-client.i: client.c.i
-.PHONY : client.i
+Client/client.i: Client/client.c.i
+.PHONY : Client/client.i
 
 # target to preprocess a source file
-client.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/client.dir/build.make CMakeFiles/client.dir/client.c.i
-.PHONY : client.c.i
+Client/client.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/client.dir/build.make CMakeFiles/client.dir/Client/client.c.i
+.PHONY : Client/client.c.i
 
-client.s: client.c.s
-.PHONY : client.s
+Client/client.s: Client/client.c.s
+.PHONY : Client/client.s
 
 # target to generate assembly for a file
-client.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/client.dir/build.make CMakeFiles/client.dir/client.c.s
-.PHONY : client.c.s
+Client/client.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/client.dir/build.make CMakeFiles/client.dir/Client/client.c.s
+.PHONY : Client/client.c.s
 
-server.o: server.c.o
-.PHONY : server.o
+Server/server.o: Server/server.c.o
+.PHONY : Server/server.o
 
 # target to build an object file
-server.c.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/server.c.o
-.PHONY : server.c.o
+Server/server.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/Server/server.c.o
+.PHONY : Server/server.c.o
 
-server.i: server.c.i
-.PHONY : server.i
+Server/server.i: Server/server.c.i
+.PHONY : Server/server.i
 
 # target to preprocess a source file
-server.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/server.c.i
-.PHONY : server.c.i
+Server/server.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/Server/server.c.i
+.PHONY : Server/server.c.i
 
-server.s: server.c.s
-.PHONY : server.s
+Server/server.s: Server/server.c.s
+.PHONY : Server/server.s
 
 # target to generate assembly for a file
-server.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/server.c.s
-.PHONY : server.c.s
+Server/server.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/Server/server.c.s
+.PHONY : Server/server.c.s
+
+Server/sha256_utils.o: Server/sha256_utils.c.o
+.PHONY : Server/sha256_utils.o
+
+# target to build an object file
+Server/sha256_utils.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/Server/sha256_utils.c.o
+.PHONY : Server/sha256_utils.c.o
+
+Server/sha256_utils.i: Server/sha256_utils.c.i
+.PHONY : Server/sha256_utils.i
+
+# target to preprocess a source file
+Server/sha256_utils.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/Server/sha256_utils.c.i
+.PHONY : Server/sha256_utils.c.i
+
+Server/sha256_utils.s: Server/sha256_utils.c.s
+.PHONY : Server/sha256_utils.s
+
+# target to generate assembly for a file
+Server/sha256_utils.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/Server/sha256_utils.c.s
+.PHONY : Server/sha256_utils.c.s
 
 # Help Target
 help:
@@ -200,12 +224,15 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... client"
 	@echo "... server"
-	@echo "... client.o"
-	@echo "... client.i"
-	@echo "... client.s"
-	@echo "... server.o"
-	@echo "... server.i"
-	@echo "... server.s"
+	@echo "... Client/client.o"
+	@echo "... Client/client.i"
+	@echo "... Client/client.s"
+	@echo "... Server/server.o"
+	@echo "... Server/server.i"
+	@echo "... Server/server.s"
+	@echo "... Server/sha256_utils.o"
+	@echo "... Server/sha256_utils.i"
+	@echo "... Server/sha256_utils.s"
 .PHONY : help
 
 

@@ -1,0 +1,4 @@
+/home/baddy/C/Sistemi_operativi/Progetto_s_o/CMakeFiles/client.dir
+/home/baddy/C/Sistemi_operativi/Progetto_s_o/CMakeFiles/server.dir
+/home/baddy/C/Sistemi_operativi/Progetto_s_o/CMakeFiles/edit_cache.dir
+/home/baddy/C/Sistemi_operativi/Progetto_s_o/CMakeFiles/rebuild_cache.dir

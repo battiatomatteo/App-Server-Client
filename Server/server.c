@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <errno.h>
 #include <stdint.h>
+#include <sha256_utils.h>
 
 #define FIFO_PATH "/tmp/file_hash_fifo"
 #define MAX_PTHREADS 5
@@ -45,45 +46,22 @@ typedef struct RequestNode {
 
 RequestNode *coda_richiesta = NULL;
 
-void digest_file(const char *filename, uint8_t *hash) {
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-
-    char buffer[32];
-    int file = open(filename, O_RDONLY);
-    if (file == -1) {
-        perror("File non trovato");
-        exit(1);
-    }
-
-    ssize_t bR;
-    do {
-        bR = read(file, buffer, 32);
-        if (bR > 0) {
-            SHA256_Update(&ctx, (uint8_t *)buffer, bR);
-        } else if (bR < 0) {
-            perror("Errore lettura file");
-            exit(1);
-        }
-    } while (bR > 0);
-
-    SHA256_Final(hash, &ctx);
-    close(file);
-}
-
+// Inizializza la cache
 int search_cache(const char *filepath, uint8_t *hash_out) {
-    for (int i = 0; i < CACHE_SIZE; i++) {
-        if (cache[i].valido && strcmp(cache[i].path, filepath) == 0) {
-            memcpy(hash_out, cache[i].hash, SHA256_DIGEST_LENGTH);
+    for (int i = 0; i < CACHE_SIZE; i++) {  // Controlla se il file è già in cache
+        if (cache[i].valido && strcmp(cache[i].path, filepath) == 0) { 
+            memcpy(hash_out, cache[i].hash, SHA256_DIGEST_LENGTH);  // Copia l'hash nella variabile di output
             return 1;
         }
     }
     return 0;
 }
 
+// Inserisce un file nella cache
+// Se la cache è piena, non fa nulla 
 void insert_cache(const char *filepath, const uint8_t *hash) {
-    for (int i = 0; i < CACHE_SIZE; i++) {
-        if (!cache[i].valido) {
+    for (int i = 0; i < CACHE_SIZE; i++) { 
+        if (!cache[i].valido) { // Trova una posizione libera nella cache
             strcpy(cache[i].path, filepath);
             memcpy(cache[i].hash, hash, SHA256_DIGEST_LENGTH);
             cache[i].valido = 1;
@@ -92,20 +70,26 @@ void insert_cache(const char *filepath, const uint8_t *hash) {
     }
 }
 
+// Aggiunge una richiesta alla coda, ordinata per dimensione del file
+// Se il file è già in coda, aggiunge il client alla lista dei client
+// Se il file non esiste o non è leggibile, non aggiunge la richiesta
 void enqueue_request(const char *filepath, const char *client_fifo) {
     struct stat st;
+    // Verifica se il file esiste e ottieni la sua dimensione
     off_t dimensione = stat(filepath, &st) == 0 ? st.st_size : 0;
-
+    // Se il file non esiste o non è leggibile, non aggiungere la richiesta
     RequestNode *nodoCorrente = coda_richiesta, *nodoPrec = NULL;
+    // Controlla se il file è già in coda
     while (nodoCorrente && strcmp(nodoCorrente->filepath, filepath) != 0) {
         nodoPrec = nodoCorrente;
         nodoCorrente = nodoCorrente->next;
     }
-
+    // Se il file è già in coda, aggiungi il client
     if (nodoCorrente) {
         // File già in coda, aggiungi client
         ClientNode *c = malloc(sizeof(ClientNode));
         strcpy(c->fifo_path, client_fifo);
+        // Aggiungi il client alla lista dei client
         c->next = nodoCorrente->clients;
         nodoCorrente->clients = c;
         return;
@@ -123,6 +107,7 @@ void enqueue_request(const char *filepath, const char *client_fifo) {
     // Inserimento ordinato per dimensione
     nodoCorrente = coda_richiesta;
     nodoPrec = NULL;
+    // Trova la posizione giusta per inserire il nuovo nodo
     while (nodoCorrente && nodoCorrente->dim_file < dimensione) {
         nodoPrec = nodoCorrente;
         nodoCorrente = nodoCorrente->next;
@@ -136,9 +121,14 @@ void enqueue_request(const char *filepath, const char *client_fifo) {
     }
 }
 
+// Thread worker che gestisce le richieste
+// Si occupa di calcolare l'hash del file e rispondere ai client
+// Se il file è già in cache, lo restituisce direttamente
+// Se il file non è leggibile, restituisce un errore
+// Utilizza mutex per garantire l'accesso sicuro alla coda e alla cache
 void *worker_thread(void *arg) {
     pthread_mutex_lock(&mutex);
-    if (!coda_richiesta) {
+    if (!coda_richiesta) {  // Se non ci sono richieste, rilascia il mutex e termina
         pthread_mutex_unlock(&mutex);
         return NULL;
     }
@@ -148,23 +138,29 @@ void *worker_thread(void *arg) {
     pthread_mutex_unlock(&mutex);
 
     uint8_t hash[SHA256_DIGEST_LENGTH];
-    int success = 1;
+    int ok = 1; //
 
-    if (!search_cache(req->filepath, hash)) {
+    if (!search_cache(req->filepath, hash)) {  // Se non è in cache
+        // Controlla se il file esiste e se è leggibile
         if (access(req->filepath, R_OK) != 0) {
-            success = 0;
+            ok = 0;  // File non leggibile
         } else {
-            digest_file(req->filepath, hash);
-            pthread_mutex_lock(&mutex);
-            insert_cache(req->filepath, hash);
-            pthread_mutex_unlock(&mutex);
+            if(digest_file(req->filepath, hash) < 0){
+                ok = 0; // Errore durante il calcolo dell'hash
+            }
+            else {
+                // Aggiungi l'hash alla cache
+                pthread_mutex_lock(&mutex);
+                insert_cache(req->filepath, hash);
+                pthread_mutex_unlock(&mutex);
+            }
         }
     }
 
     char hash_str[MAX_BUFFER] = {0};
-    if (success) {
-        snprintf(hash_str, MAX_BUFFER, "SHA256(%s) = ", req->filepath);
-        for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+    if (ok) {
+        snprintf(hash_str, MAX_BUFFER, "SHA256(%s) = ", req->filepath); // Inizializza la stringa con il percorso del file
+        for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) { // Converte l'hash in esadecimale
             char byte[3];
             snprintf(byte, sizeof(byte), "%02x", hash[i]);
             strncat(hash_str, byte, 2);
@@ -213,7 +209,7 @@ int main() {
             continue;
         }
 
-        ssize_t len = read(fifo, buffer, sizeof(buffer) - 1);
+        ssize_t len = read(fifo, buffer, sizeof(buffer) - 1);  // Leggi dalla FIFO
         close(fifo);
         if (len <= 0) continue;
 
@@ -224,7 +220,7 @@ int main() {
 
         pthread_mutex_lock(&mutex);
         enqueue_request(filepath, client_fifo);
-        if (active_threads < MAX_PTHREADS) {
+        if (active_threads < MAX_PTHREADS) {  // Controlla se ci sono thread attivi
             pthread_t tid;
             pthread_create(&tid, NULL, worker_thread, NULL);
             pthread_detach(tid);
@@ -236,16 +232,3 @@ int main() {
     unlink(FIFO_PATH);
     return 0;
 }
-
-
-/*
-✔️ FIFO condivisa tra client e server
-
-✔️ Hash SHA-256 con OpenSSL (digest_file)
-
-✔️ Thread pool con massimo MAX_PTHREADS
-
-✔️ Caching delle coppie percorso-hash
-
-✔️ Gestione concorrente con pthread_mutex
-*/

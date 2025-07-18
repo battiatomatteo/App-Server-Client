@@ -55,7 +55,7 @@ int main(int argc, char *argv[]) {
     close(fifo_w);
 
     // Leggi la risposta dalla propria FIFO
-    int fifo_r = open(coda_risposte, O_RDONLY);
+    int fifo_r = open(coda_risposte, O_RDONLY);  // Apri la FIFO personale per lettura
     if (fifo_r == -1) {
         perror("Errore apertura FIFO personale per lettura");
         unlink(coda_risposte);
@@ -63,7 +63,7 @@ int main(int argc, char *argv[]) {
     }
 
     char risposta[MAX_BUFFER];
-    ssize_t len = read(fifo_r, risposta, sizeof(risposta) - 1);
+    ssize_t len = read(fifo_r, risposta, sizeof(risposta) - 1);  // Leggi la risposta
     if (len > 0) {
         risposta[len] = '\0';
         printf("Risposta dal server:\n%s", risposta);
