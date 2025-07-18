@@ -1,106 +1,147 @@
-# Client-Server SHA256 Application
+## Descrizione generale
 
-Progetto universitario di un'applicazione client-server in C per il calcolo di hash SHA-256 di file.
+Questo progetto implementa un sistema client-server in ambiente Linux che consente a più client di richiedere il calcolo dell'hash **SHA-256** di file presenti nel filesystem. La comunicazione tra client e server avviene tramite **FIFO (named pipe)**. Il server è in grado di gestire richieste concorrenti usando **pthread**, mantenendo una **cache** per evitare ricalcoli inutili.
 
-## Descrizione del Progetto
+### Obiettivi principali:
 
-Il progetto implementa un sistema client-server dove:
-- Il **client** invia richieste per calcolare l'hash SHA-256 di un file
-- Il **server** elabora le richieste in modo concorrente e restituisce l'hash calcolato
-- La comunicazione avviene tramite FIFO (Named Pipes)
+- Calcolo dell’hash SHA-256 di un file su richiesta di un client.
+- Gestione concorrente delle richieste tramite thread.
+- FIFO dedicata per ogni client per ricevere la risposta.
+- Priorità nella coda del server basata sulla dimensione del file.
+- Cache per evitare ricalcoli su file già processati.
 
-### Architettura del Sistema
+---
 
+## `server.c` - Componente server
+
+### Funzionalità principali
+
+- Riceve richieste tramite una FIFO globale (`/tmp/file_hash_fifo`) contenenti:
+  ```
+  <percorso_file>|<fifo_risposta_client>
+  ```
+- Accoda la richiesta in ordine di dimensione crescente del file.
+- Avvia fino a 5 thread worker per gestire i calcoli.
+- Usa una **cache** per salvare l'hash dei file già calcolati.
+- Invia la risposta ai client aprendo la loro FIFO personale.
+
+### Strutture dati principali
+
+- `CacheEntry`: array statico che contiene fino a 100 voci di cache (`filepath` + `hash`).
+- `RequestNode`: nodo della coda richieste, ordinato per dimensione file.
+- `ClientNode`: lista di client che richiedono lo stesso file.
+
+### Parti di codice rilevanti
+
+#### Cache
+```c
+int search_cache(const char *filepath, uint8_t *hash_out);
+void insert_cache(const char *filepath, const uint8_t *hash);
 ```
-Client 1 ──┐
-Client 2 ──┼──→ FIFO ──→ Server ──→ Thread Pool ──→ SHA256 Calculation
-Client N ──┘                    ├──→ Cache System
-                               └──→ Request Scheduling
+Permettono di evitare il ricalcolo dell'hash se già presente in cache.
+
+#### Coda delle richieste
+```c
+void enqueue_request(const char *filepath, const char *client_fifo);
 ```
+Inserisce in modo **ordinato** per dimensione e gestisce richieste duplicate sullo stesso file.
 
-## Funzionalità Implementate
-
-### Server (`server.c`)
-- ✅ **Gestione FIFO**: Riceve richieste e invia risposte tramite FIFO
-- ✅ **Thread Pool**: Massimo 5 thread concorrenti (configurabile)
-- ✅ **Ordinamento richieste**: Schedula per dimensione file (dal più piccolo al più grande)
-- ✅ **Sistema di caching**: Cache LRU per 50 coppie percorso-hash
-- ✅ **Gestione richieste duplicate**: Un solo calcolo per file identici richiesti simultaneamente
-- ✅ **Monitor e sincronizzazione**: Pthread mutex e semafori per thread safety
-- ✅ **Gestione errori**: Controllo file non esistenti e errori di I/O
-
-### Client (`client.c`)
-- ✅ **Invio richieste**: Invia percorso file al server tramite FIFO
-- ✅ **Ricezione risposte**: Riceve hash calcolato dal server
-- ✅ **Timeout**: Timeout di 30 secondi per le risposte
-- ✅ **Validazione input**: Controllo esistenza file prima dell'invio
-- ✅ **Gestione errori**: Messaggi di errore chiari per l'utente
-
-## Requisiti di Sistema
-
-### Dipendenze
-- **OpenSSL**: Per il calcolo SHA-256
-- **PThreads**: Per la concorrenza
-- **GCC**: Compilatore C con supporto C99+
-- **CMake**: Sistema di build (versione 3.20+)
-
-### Installazione Dipendenze (Ubuntu/Debian)
-```bash
-sudo apt update
-sudo apt install libssl-dev build-essential cmake
+#### Thread worker
+```c
+void *worker_thread(void *arg);
 ```
+Calcola l’hash (tramite `digest_file()`), accede alla cache in modo sicuro (con `mutex`), e risponde ai client.
 
-### Installazione Dipendenze (CentOS/RHEL)
-```bash
-sudo yum install openssl-devel gcc cmake
+#### Ciclo principale
+```c
+while (1) {
+    read(fifo, buffer, ...);
+    enqueue_request(...);
+    if (active_threads < MAX_PTHREADS) {
+        pthread_create(...);
+    }
+}
 ```
+Gestisce le nuove richieste e lancia thread solo se sotto la soglia di concorrenza.
 
-### Installazione Dipendenze (macOS)
-```bash
-brew install openssl cmake
-```
+---
 
-## Compilazione
+## `client.c` - Componente client
 
-### Metodo 1: Con CMake (Raccomandato)
-```bash
-# Crea directory di build
-mkdir build
-cd build
+### Funzionalità principali
 
-# Configura il progetto
-cmake ..
+- Verifica se il file esiste ( nel caso non esiste mostra un messaggio di errore ) .
+- Crea una FIFO personale (`/tmp/client_fifo_<pid>`).
+- Invia al server un messaggio con:
+  ```
+  <filepath>|<client_fifo>
+  ```
+- Attende la risposta dal server nella FIFO personale.
+- Stampa l'hash (o messaggio di errore).
 
-# Compila
-make
+### Parti di codice rilevanti
 
-# I binari saranno in build/
-```
-
-### Metodo 2: Compilazione Manuale
-```bash
-# Server
-gcc -o server src/server.c -lssl -lcrypto -lpthread -std=c99
-
-# Client  
-gcc -o client src/client.c -lpthread -std=c99
-
-# Programmi di test originali
-gcc -o sha256_string src/sha256_string.c -lssl -lcrypto
-gcc -o sha256_file src/sha256_file.c -lssl -lcrypto
-```
-
-## Utilizzo
-
-### 1. Avviare il Server
-```bash
-./server
+#### Generazione FIFO client
+```c
+void genera_coda_risposte(char *coda_risposte) {
+    snprintf(coda_risposte, MAX_BUFFER, "/tmp/client_fifo_%d", getpid());
+    mkfifo(coda_risposte, 0666);
+}
 ```
 
-Output atteso:
+#### Invio e ricezione
+```c
+write(fifo_w, messaggio, strlen(messaggio));
+...
+read(fifo_r, risposta, sizeof(risposta) - 1);
 ```
-Server SHA256 avviato. FIFO: /tmp/sha256_fifo
-Numero massimo thread: 5
+Comunica in modo sincrono: invia richiesta e attende la risposta.
+
+---
+
+## `sha256_utils.c` - Utility per hash
+
+### Funzionalità principali
+
+- Contiene una sola funzione:
+```c
+int digest_file(const char *filename, uint8_t *hash);
+```
+Calcola l’hash SHA-256 del file usando le API OpenSSL:
+- `SHA256_Init`, `SHA256_Update`, `SHA256_Final`.
+
+### Logica
+- Apre il file in sola lettura.
+- Legge a blocchi di 32 byte.
+- Aggiorna il contesto SHA-256 per ogni blocco letto.
+- Chiude il file e restituisce l’hash binario.
+
+---
+
+## `CMakeLists.txt` - Build configuration
+
+```cmake
+find_package(OpenSSL REQUIRED)
+...
+add_executable(client Client/client.c)
+add_executable(server Server/server.c Server/sha256_utils.c)
+target_link_libraries(server OpenSSL::SSL OpenSSL::Crypto)
 ```
 
-###
+### Note:
+
+- Il progetto richiede **OpenSSL** per il calcolo degli hash.
+- I file `client.c` e `server.c` si trovano rispettivamente in `Client/` e `Server/`.
+- I file `.c` sono compilati in due eseguibili distinti: `client` e `server`.
+
+---
+
+## Difficoltà riscontrate
+
+- Gestione della coda delle richieste da parte dei vari client.
+- Configurazione di CMake. 
+- Risposta da parte del server a tutti i client che richiedono lo stesso file.
+
+
+
+
