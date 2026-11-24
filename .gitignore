@@ -1,0 +1,28 @@
+
+# CMake
+build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# File compilati
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.exe
+
+# Eseguibili del progetto
+client
+server
+
+# IDE
+.idea/
+.vscode/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
