@@ -1,14 +1,18 @@
+# App-Server-Client
+
 ## Descrizione generale
 
-Questo progetto implementa un sistema client-server in ambiente Linux che consente a più client di richiedere il calcolo dell'hash **SHA-256** di file presenti nel filesystem. La comunicazione tra client e server avviene tramite **FIFO (named pipe)**. Il server è in grado di gestire richieste concorrenti usando **pthread**, mantenendo una **cache** per evitare ricalcoli inutili.
+Il progetto implementa un sistema client-server in ambiente Linux che consente a più client di richiedere il calcolo dell'hash **SHA-256** di file presenti nel filesystem.
 
-### Obiettivi principali:
+La comunicazione avviene tramite FIFO (named pipe), mentre il server gestisce le richieste concorrenti utilizzando thread POSIX (`pthread`) e una cache per evitare alcuni ricalcoli.
 
-- Calcolo dell’hash SHA-256 di un file su richiesta di un client.
+### Obiettivi principali
+
+- Calcolo dell'hash SHA-256 di un file su richiesta di un client.
 - Gestione concorrente delle richieste tramite thread.
-- FIFO dedicata per ogni client per ricevere la risposta.
-- Priorità nella coda del server basata sulla dimensione del file.
-- Cache per evitare ricalcoli su file già processati.
+- FIFO dedicata a ogni client per ricevere la risposta.
+- Priorità delle richieste in base alla dimensione del file.
+- Cache per memorizzare gli hash già calcolati.
 
 ---
 
@@ -16,53 +20,24 @@ Questo progetto implementa un sistema client-server in ambiente Linux che consen
 
 ### Funzionalità principali
 
-- Riceve richieste tramite una FIFO globale (`/tmp/file_hash_fifo`) contenenti:
-  ```
-  <percorso_file>|<fifo_risposta_client>
-  ```
-- Accoda la richiesta in ordine di dimensione crescente del file.
-- Avvia fino a 5 thread worker per gestire i calcoli.
-- Usa una **cache** per salvare l'hash dei file già calcolati.
-- Invia la risposta ai client aprendo la loro FIFO personale.
+- Riceve richieste tramite una FIFO globale (`/tmp/file_hash_fifo`).
+- Accoda le richieste in ordine crescente di dimensione del file.
+- Gestisce fino a 5 thread worker contemporaneamente.
+- Utilizza una cache con capacità massima di 100 elementi.
+- Restituisce il risultato ai client attraverso le rispettive FIFO personali.
 
 ### Strutture dati principali
 
-- `CacheEntry`: array statico che contiene fino a 100 voci di cache (`filepath` + `hash`).
-- `RequestNode`: nodo della coda richieste, ordinato per dimensione file.
-- `ClientNode`: lista di client che richiedono lo stesso file.
+- `CacheEntry`: contiene il percorso del file e il relativo hash SHA-256.
+- `RequestNode`: rappresenta una richiesta nella coda, ordinata per dimensione del file.
+- `ClientNode`: contiene i riferimenti alle FIFO dei client in attesa della risposta.
 
-### Parti di codice rilevanti
+### Funzioni principali
 
-#### Cache
-```c
-int search_cache(const char *filepath, uint8_t *hash_out);
-void insert_cache(const char *filepath, const uint8_t *hash);
-```
-Permettono di evitare il ricalcolo dell'hash se già presente in cache.
-
-#### Coda delle richieste
-```c
-void enqueue_request(const char *filepath, const char *client_fifo);
-```
-Inserisce in modo **ordinato** per dimensione e gestisce richieste duplicate sullo stesso file.
-
-#### Thread worker
-```c
-void *worker_thread(void *arg);
-```
-Calcola l’hash (tramite `digest_file()`), accede alla cache in modo sicuro (con `mutex`), e risponde ai client.
-
-#### Ciclo principale
-```c
-while (1) {
-    read(fifo, buffer, ...);
-    enqueue_request(...);
-    if (active_threads < MAX_PTHREADS) {
-        pthread_create(...);
-    }
-}
-```
-Gestisce le nuove richieste e lancia thread solo se sotto la soglia di concorrenza.
+- `search_cache()`: verifica se l'hash di un file è già presente nella cache.
+- `insert_cache()`: inserisce un nuovo risultato nella cache.
+- `enqueue_request()`: inserisce una richiesta nella coda e gestisce eventuali richieste duplicate ancora in attesa.
+- `worker_thread()`: elabora le richieste, calcola gli hash e invia le risposte ai client.
 
 ---
 
@@ -70,78 +45,98 @@ Gestisce le nuove richieste e lancia thread solo se sotto la soglia di concorren
 
 ### Funzionalità principali
 
-- Verifica se il file esiste ( nel caso non esiste mostra un messaggio di errore ) .
-- Crea una FIFO personale (`/tmp/client_fifo_<pid>`).
-- Invia al server un messaggio con:
-  ```
-  <filepath>|<client_fifo>
-  ```
-- Attende la risposta dal server nella FIFO personale.
-- Stampa l'hash (o messaggio di errore).
+- Verifica l'esistenza del file richiesto.
+- Crea una FIFO personale identificata tramite il PID del processo.
+- Invia al server il percorso del file e quello della propria FIFO.
+- Attende la risposta del server.
+- Visualizza l'hash SHA-256 oppure un messaggio di errore.
 
-### Parti di codice rilevanti
-
-#### Generazione FIFO client
-```c
-void genera_coda_risposte(char *coda_risposte) {
-    snprintf(coda_risposte, MAX_BUFFER, "/tmp/client_fifo_%d", getpid());
-    mkfifo(coda_risposte, 0666);
-}
-```
-
-#### Invio e ricezione
-```c
-write(fifo_w, messaggio, strlen(messaggio));
-...
-read(fifo_r, risposta, sizeof(risposta) - 1);
-```
-Comunica in modo sincrono: invia richiesta e attende la risposta.
+Il client comunica attraverso la FIFO globale e riceve la risposta tramite la propria FIFO personale.
 
 ---
 
-## `sha256_utils.c` - Utility per hash
+## `sha256_utils.c` - Utility per SHA-256
 
-### Funzionalità principali
+Contiene la funzione:
 
-- Contiene una sola funzione:
 ```c
 int digest_file(const char *filename, uint8_t *hash);
 ```
-Calcola l’hash SHA-256 del file usando le API OpenSSL:
-- `SHA256_Init`, `SHA256_Update`, `SHA256_Final`.
 
-### Logica
-- Apre il file in sola lettura.
-- Legge a blocchi di 32 byte.
-- Aggiorna il contesto SHA-256 per ogni blocco letto.
-- Chiude il file e restituisce l’hash binario.
+La funzione calcola l'hash SHA-256 di un file utilizzando le API crittografiche di OpenSSL.
+
+Il file viene aperto in sola lettura e analizzato progressivamente attraverso blocchi di dati.
+
+La funzione restituisce:
+- `0` in caso di successo.
+- `-1` in caso di errore.
 
 ---
 
-## `CMakeLists.txt` - Build configuration
+## `CMakeLists.txt` - Configurazione della compilazione
 
-```cmake
-find_package(OpenSSL REQUIRED)
-...
-add_executable(client Client/client.c)
-add_executable(server Server/server.c Server/sha256_utils.c)
-target_link_libraries(server OpenSSL::SSL OpenSSL::Crypto)
+Il progetto utilizza CMake per configurare la compilazione dei due eseguibili:
+
+- `client`: compilato a partire da `Client/client.c`.
+- `server`: compilato a partire da `Server/server.c` e `Server/sha256_utils.c`.
+
+Le dipendenze principali sono OpenSSL e pthread.
+
+---
+
+## Requisiti
+
+- Sistema operativo Linux.
+- Compilatore C compatibile con lo standard utilizzato dal progetto.
+- CMake.
+- GNU Make.
+- OpenSSL con librerie e header di sviluppo.
+- Librerie POSIX per la gestione dei thread.
+
+## Compilazione e avvio
+
+Dopo aver clonato il repository:
+
+```bash
+git clone https://github.com/battiatomatteo/App-Server-Client.git
+cd App-Server-Client
 ```
 
-### Note:
+### Configurazione e compilazione
 
-- Il progetto richiede **OpenSSL** per il calcolo degli hash.
-- I file `client.c` e `server.c` si trovano rispettivamente in `Client/` e `Server/`.
-- I file `.c` sono compilati in due eseguibili distinti: `client` e `server`.
+```bash
+cmake -S . -B build
+cmake --build build
+```
+
+### Avvio del server
+
+Aprire un terminale ed eseguire:
+
+```bash
+./build/server
+```
+
+### Avvio di un client
+
+Aprire un secondo terminale ed eseguire:
+
+```bash
+./build/client <percorso_file>
+```
+
+Sostituire `<percorso_file>` con il percorso del file di cui si desidera calcolare l'hash SHA-256.
 
 ---
 
-## Difficoltà riscontrate
+## Difficoltà riscontrate e possibili miglioramenti
 
-- Gestione della coda delle richieste da parte dei vari client.
-- Configurazione di CMake. 
-- Risposta da parte del server a tutti i client che richiedono lo stesso file.
+Durante lo sviluppo sono state affrontate diverse problematiche relative a:
 
+- Gestione concorrente delle richieste provenienti da più client.
+- Organizzazione della coda delle richieste.
+- Sincronizzazione tra thread e accesso alle strutture condivise.
+- Comunicazione e gestione delle risposte tramite FIFO.
+- Configurazione dell'ambiente di compilazione con CMake.
 
-
-
+Tra i possibili sviluppi futuri rientrano il miglioramento della sincronizzazione della cache, della gestione delle richieste in attesa e della validazione dei messaggi ricevuti.
